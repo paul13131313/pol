@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     if (!response.ok) {
-      return res.status(200).json({ reply: `[debug] ${response.status}: ${JSON.stringify(data).slice(0, 200)}` });
+      return res.status(200).json({ reply: "…通信に障害が発生しています。しばらくお待ちください。" });
     }
 
     const reply = data.content?.find(b => b.type === "text")?.text || "…（沈黙）";
