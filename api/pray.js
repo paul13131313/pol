@@ -25,7 +25,7 @@ export default async function handler(req, res) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-haiku-4-5-20251001",
         max_tokens: 1000,
         system: systemPrompt,
         messages: [{ role: "user", content: message }],
@@ -35,8 +35,7 @@ export default async function handler(req, res) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Anthropic API error:", JSON.stringify(data));
-      return res.status(200).json({ reply: "…通信に障害が発生しています。しばらくお待ちください。" });
+      return res.status(200).json({ reply: `[debug] ${response.status}: ${JSON.stringify(data).slice(0, 200)}` });
     }
 
     const reply = data.content?.find(b => b.type === "text")?.text || "…（沈黙）";
