@@ -117,10 +117,10 @@ class Org {
     this.gen = gen ?? 0;
     const d = dna || {};
     this.dna = {
-      spd:   d.spd   ?? 0.3 + Math.random() * 0.6,
+      spd:   d.spd   ?? 0.15 + Math.random() * 0.25,
       sense: d.sense ?? 12  + Math.random() * 20,
       size:  d.size  ?? 1,
-      repro: d.repro ?? 52  + Math.random() * 28,
+      repro: d.repro ?? 60  + Math.random() * 30,
       life:  d.life  ?? 280 + Math.random() * 380,
       eff:   d.eff   ?? 0.65+ Math.random() * 0.7,
     };
@@ -256,11 +256,11 @@ export default function Pol() {
   const simRef    = useRef(null);
   const rafRef    = useRef(null);
   const frameRef  = useRef(0);
-  const ctrlRef   = useRef({ food: 1.2, mut: 0.12, harsh: 0.85, spd: 8 });
+  const ctrlRef   = useRef({ food: 1.2, mut: 0.12, harsh: 0.85, spd: 4 });
   const awakRef   = useRef(false);
 
   const [disp, setDisp]         = useState({ pop: 20, maxGen: 0, year: 0, era: ERAS[0], extinct: 0 });
-  const [ctrl, setCtrl]         = useState({ food: 1.2, mut: 0.12, harsh: 0.85, spd: 8 });
+  const [ctrl, setCtrl]         = useState({ food: 1.2, mut: 0.12, harsh: 0.85, spd: 4 });
   const [awakened, setAwakened] = useState(false);
   const [msg, setMsg]           = useState("");
   const [reply, setReply]       = useState("");
@@ -268,7 +268,7 @@ export default function Pol() {
 
   function initSim() {
     const orgs = [];
-    for (let i = 0; i < 20; i++) orgs.push(spawnOrg(0));
+    for (let i = 0; i < 6; i++) orgs.push(spawnOrg(0));
     simRef.current = { orgs, food: Array.from({ length: 40 }, mkFood), tick: 0, maxGen: 0, extinct: 0 };
   }
 
@@ -302,9 +302,9 @@ export default function Pol() {
         o.vy = (dy / d) * o.dna.spd;
         if (d < 3) { o.energy = Math.min(100, o.energy + 18); best.alive = false; }
       } else {
-        if (Math.random() < 0.04) {
-          o.vx = (Math.random() - 0.5) * o.dna.spd * 2;
-          o.vy = (Math.random() - 0.5) * o.dna.spd * 2;
+        if (Math.random() < 0.02) {
+          o.vx = (Math.random() - 0.5) * o.dna.spd;
+          o.vy = (Math.random() - 0.5) * o.dna.spd;
         }
       }
 
@@ -399,12 +399,6 @@ export default function Pol() {
     }
     if (s.maxGen >= 400) {
       for (const t of TOWERS) drawTowerTopDown(ctx, t.x, t.y);
-    }
-
-    // Food
-    for (const f of s.food) {
-      if (!f.alive) continue;
-      px(ctx, f.x, f.y, "#44dd55");
     }
 
     // Creatures (sorted by y for depth)
