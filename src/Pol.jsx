@@ -1,24 +1,130 @@
 import { useState, useEffect, useRef } from "react";
 
-const CW = 700, CH = 440;
-const MAX_POP = 280;
-const MAX_FOOD = 160;
+// ── Constants ──
+const PX = 3;
+const GW = 240, GH = 150;
+const CW = GW * PX, CH = GH * PX;
+const GROUND_Y = 112;
+const MAX_POP = 200;
+const MAX_FOOD = 120;
 
+// ── Terrain heightmap ──
+const terrain = [];
+for (let x = 0; x < GW; x++) {
+  terrain[x] = Math.floor(
+    GROUND_Y + Math.sin(x * 0.025) * 6 + Math.sin(x * 0.06) * 3 + Math.sin(x * 0.13) * 1.5
+  );
+}
+
+// ── Color palette (8-bit style) ──
+const PAL = {
+  sky:    ["#0b0b1a","#0f0f2d","#141440","#1a1a55","#24246a"],
+  star:   "#444466",
+  ground: ["#2a5e1a","#1e4a12","#163a0e"],
+  earth:  ["#3d2815","#2e1f10","#1f150b"],
+  water:  "#1a3a6a",
+  cloud:  "#1a1a3a",
+  tree_trunk: "#5a3a1a",
+  tree_leaf:  "#1a6a1a",
+  tree_leaf2: "#2a8a2a",
+  hut:    "#8a6a3a",
+  hut_roof: "#6a2a1a",
+  stone:  "#6a6a7a",
+  brick:  "#8a4a3a",
+  window: "#aaaa33",
+  road:   "#3a3a3a",
+  light:  "#ffee66",
+};
+
+// ── Creature stages ──
+const STAGES = [
+  { gen: 0,   name: "単細胞",  color: "#44bbff" },
+  { gen: 25,  name: "両生類",  color: "#33dd55" },
+  { gen: 70,  name: "鳥類",    color: "#dddd33" },
+  { gen: 140, name: "哺乳類",  color: "#ff8833" },
+  { gen: 220, name: "人類",    color: "#ff4455" },
+];
+
+function getStage(gen) {
+  let s = STAGES[0];
+  for (const st of STAGES) { if (gen >= st.gen) s = st; }
+  return s;
+}
+
+// ── Pixel sprites (relative to creature pos) ──
+const SPRITE = {
+  // [dx, dy] pairs
+  cell:      [[0,0],[1,0]],
+  amphibian: [[0,0],[1,0],[2,0],[0,-1],[2,-1],[0,1],[2,1]],
+  bird:      [[0,0],[1,0],[2,0],[1,-1],[1,-2],[-1,-1],[3,-1]],
+  mammal:    [[0,0],[1,0],[2,0],[3,0],[0,-1],[1,-1],[2,-1],[3,-1],[0,1],[3,1]],
+  human:     [[1,0],[1,-1],[0,-1],[2,-1],[1,-2],[1,-3],[0,-3],[2,-3],[0,-4],[1,-4],[2,-4]],
+};
+
+function getSpriteKey(gen) {
+  if (gen < 25)  return "cell";
+  if (gen < 70)  return "amphibian";
+  if (gen < 140) return "bird";
+  if (gen < 220) return "mammal";
+  return "human";
+}
+
+// ── Eras ──
+const ERAS = [
+  [0,   "海の時代",       "Age of the Sea"],
+  [25,  "両生類の時代",   "Age of Amphibians"],
+  [70,  "鳥類の時代",     "Age of Birds"],
+  [140, "哺乳類の時代",   "Age of Mammals"],
+  [220, "人類の時代",     "Age of Humans"],
+  [320, "文明の曙光",     "Dawn of Civilization"],
+  [400, "✦ 自我の覚醒",  "The Awakening ✦"],
+];
+
+function getEra(gen) {
+  let e = ERAS[0];
+  for (const era of ERAS) { if (gen >= era[0]) e = era; }
+  return e;
+}
+
+// ── Structures (appear at gen thresholds) ──
+const STRUCTURES = [
+  { gen: 25,  type: "tree",  x: 22 },
+  { gen: 25,  type: "tree",  x: 58 },
+  { gen: 25,  type: "tree",  x: 95 },
+  { gen: 25,  type: "tree",  x: 138 },
+  { gen: 25,  type: "tree",  x: 178 },
+  { gen: 25,  type: "tree",  x: 215 },
+  { gen: 70,  type: "tree",  x: 40 },
+  { gen: 70,  type: "tree",  x: 115 },
+  { gen: 70,  type: "tree",  x: 195 },
+  { gen: 140, type: "hut",   x: 50 },
+  { gen: 140, type: "hut",   x: 160 },
+  { gen: 220, type: "house", x: 80 },
+  { gen: 220, type: "house", x: 190 },
+  { gen: 220, type: "house", x: 30 },
+  { gen: 320, type: "building", x: 60 },
+  { gen: 320, type: "building", x: 130 },
+  { gen: 320, type: "building", x: 200 },
+  { gen: 400, type: "tower", x: 100 },
+  { gen: 400, type: "tower", x: 170 },
+  { gen: 400, type: "tower", x: 40 },
+];
+
+// ── Organism ──
 class Org {
   constructor(x, y, dna, gen) {
     this.x = x; this.y = y;
     this.gen = gen ?? 0;
     const d = dna || {};
     this.dna = {
-      spd:   d.spd   ?? 0.7  + Math.random() * 1.3,
-      sense: d.sense ?? 35   + Math.random() * 65,
-      size:  d.size  ?? 1.5  + Math.random() * 2.5,
+      spd:   d.spd   ?? 0.4  + Math.random() * 0.8,
+      sense: d.sense ?? 15   + Math.random() * 25,
+      size:  d.size  ?? 1,
       repro: d.repro ?? 52   + Math.random() * 28,
       life:  d.life  ?? 280  + Math.random() * 380,
       eff:   d.eff   ?? 0.65 + Math.random() * 0.7,
     };
     this.vx = (Math.random() - 0.5) * this.dna.spd;
-    this.vy = (Math.random() - 0.5) * this.dna.spd;
     this.energy = 28 + Math.random() * 22;
     this.age = 0;
     this.reproduced = false;
@@ -29,51 +135,124 @@ class Org {
     const d = this.dna;
     const m = (v, lo, hi, sc) => Math.max(lo, Math.min(hi, v + (Math.random()-0.5)*mut*sc));
     return {
-      spd:   m(d.spd,   0.1,  4.5,  1.5),
-      sense: m(d.sense,  8,    190,  50),
-      size:  m(d.size,   1,    9,    2),
-      repro: m(d.repro,  32,   95,   20),
-      life:  m(d.life,   80,   1200, 200),
-      eff:   m(d.eff,    0.15, 2.8,  0.5),
+      spd:   m(d.spd,   0.1, 3.0,  1.0),
+      sense: m(d.sense,  5,   80,   20),
+      size:  m(d.size,   1,   3,    0.5),
+      repro: m(d.repro,  32,  95,   20),
+      life:  m(d.life,   80,  1200, 200),
+      eff:   m(d.eff,    0.15,2.8,  0.5),
     };
   }
+}
 
-  rgba(a = 1) {
-    const t = Math.min(this.gen, 500) / 500;
-    let r, g, b;
-    if      (t < 0.20) { const s = t / 0.2;         r = 80+s*40;    g = 200;         b = 255;         }
-    else if (t < 0.35) { const s = (t-0.20) / 0.15; r = 120+s*100;  g = 220;         b = 255-s*195;   }
-    else if (t < 0.55) { const s = (t-0.35) / 0.20; r = 220+s*35;   g = 220-s*30;    b = 60-s*25;     }
-    else if (t < 0.75) { const s = (t-0.55) / 0.20; r = 255;        g = 190-s*140;   b = 35;          }
-    else               { const s = (t-0.75) / 0.25; r = 255-s*55;   g = 50-s*10;     b = 35+s*215;    }
-    return `rgba(${~~r},${~~g},${~~b},${a})`;
+// ── Food ──
+const mkFood = () => {
+  const fx = Math.floor(Math.random() * GW);
+  return { x: fx, y: terrain[fx] - 1, alive: true };
+};
+
+// ── Drawing helpers ──
+function px(ctx, x, y, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x * PX, y * PX, PX, PX);
+}
+
+function drawSprite(ctx, ox, oy, key, color) {
+  const pts = SPRITE[key];
+  for (const [dx, dy] of pts) {
+    px(ctx, Math.floor(ox) + dx, Math.floor(oy) + dy, color);
   }
 }
 
-const ERAS = [
-  [0,   "原初のスープ",   "Primordial Soup"],
-  [3,   "単細胞の夜明け", "First Cells"],
-  [12,  "多細胞化",       "Multicellular"],
-  [40,  "複雑な生命",     "Complex Life"],
-  [80,  "部族社会",       "Tribal Age"],
-  [150, "文明の曙光",     "Dawn of Civilization"],
-  [280, "高度文明",       "Advanced Society"],
-  [400, "✦ 自我の覚醒",  "The Awakening ✦"],
-];
-
-function getEra(gen) {
-  let e = ERAS[0];
-  for (const era of ERAS) { if (gen >= era[0]) e = era; }
-  return e;
+function drawTree(ctx, bx, maxGen) {
+  const by = terrain[Math.min(bx, GW - 1)] - 1;
+  const trunkH = 4 + (maxGen > 140 ? 2 : 0);
+  for (let i = 0; i < trunkH; i++) px(ctx, bx, by - i, PAL.tree_trunk);
+  // Canopy
+  const r = maxGen > 140 ? 3 : 2;
+  for (let dy = -r; dy <= 0; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (dx*dx + dy*dy <= r*r + 1) {
+        const c = (dx + dy) % 2 === 0 ? PAL.tree_leaf : PAL.tree_leaf2;
+        px(ctx, bx + dx, by - trunkH + dy, c);
+      }
+    }
+  }
 }
 
-const mkFood = () => ({
-  x: Math.random() * CW,
-  y: Math.random() * CH,
-  e: 14 + Math.random() * 16,
-  alive: true,
-});
+function drawHut(ctx, bx) {
+  const by = terrain[Math.min(bx, GW - 1)] - 1;
+  // Walls
+  for (let dy = 0; dy < 4; dy++)
+    for (let dx = 0; dx < 5; dx++)
+      px(ctx, bx + dx, by - dy, PAL.hut);
+  // Roof
+  for (let dx = -1; dx < 7; dx++) px(ctx, bx + dx, by - 4, PAL.hut_roof);
+  for (let dx = 0; dx < 5; dx++) px(ctx, bx + dx, by - 5, PAL.hut_roof);
+  for (let dx = 1; dx < 4; dx++) px(ctx, bx + dx, by - 6, PAL.hut_roof);
+  // Door
+  px(ctx, bx + 2, by, "#2a1a0a");
+  px(ctx, bx + 2, by - 1, "#2a1a0a");
+}
 
+function drawHouse(ctx, bx) {
+  const by = terrain[Math.min(bx, GW - 1)] - 1;
+  // Walls
+  for (let dy = 0; dy < 6; dy++)
+    for (let dx = 0; dx < 7; dx++)
+      px(ctx, bx + dx, by - dy, PAL.stone);
+  // Roof
+  for (let dx = -1; dx < 9; dx++) px(ctx, bx + dx, by - 6, PAL.brick);
+  for (let dx = 0; dx < 7; dx++) px(ctx, bx + dx, by - 7, PAL.brick);
+  for (let dx = 1; dx < 6; dx++) px(ctx, bx + dx, by - 8, PAL.brick);
+  // Windows
+  px(ctx, bx + 1, by - 3, PAL.window); px(ctx, bx + 1, by - 4, PAL.window);
+  px(ctx, bx + 5, by - 3, PAL.window); px(ctx, bx + 5, by - 4, PAL.window);
+  // Door
+  px(ctx, bx + 3, by, "#2a1a0a");
+  px(ctx, bx + 3, by - 1, "#2a1a0a");
+  px(ctx, bx + 3, by - 2, "#2a1a0a");
+}
+
+function drawBuilding(ctx, bx) {
+  const by = terrain[Math.min(bx, GW - 1)] - 1;
+  const h = 14;
+  for (let dy = 0; dy < h; dy++)
+    for (let dx = 0; dx < 8; dx++)
+      px(ctx, bx + dx, by - dy, "#5a5a6a");
+  // Windows
+  for (let wy = 2; wy < h - 1; wy += 3) {
+    for (let wx = 1; wx < 7; wx += 2) {
+      px(ctx, bx + wx, by - wy, PAL.window);
+      px(ctx, bx + wx, by - wy - 1, PAL.window);
+    }
+  }
+  // Door
+  for (let dy = 0; dy < 3; dy++) {
+    px(ctx, bx + 3, by - dy, "#3a3a4a");
+    px(ctx, bx + 4, by - dy, "#3a3a4a");
+  }
+}
+
+function drawTower(ctx, bx) {
+  const by = terrain[Math.min(bx, GW - 1)] - 1;
+  const h = 22;
+  for (let dy = 0; dy < h; dy++)
+    for (let dx = 0; dx < 6; dx++)
+      px(ctx, bx + dx, by - dy, "#4a4a5a");
+  // Windows (lit)
+  for (let wy = 2; wy < h - 1; wy += 2) {
+    for (let wx = 1; wx < 5; wx += 2) {
+      const lit = Math.random() > 0.3;
+      px(ctx, bx + wx, by - wy, lit ? PAL.light : "#2a2a3a");
+    }
+  }
+  // Antenna
+  px(ctx, bx + 3, by - h, "#8a8a9a");
+  px(ctx, bx + 3, by - h - 1, "#ff3333");
+}
+
+// ── Main Component ──
 export default function Pol() {
   const canvasRef = useRef(null);
   const simRef    = useRef(null);
@@ -91,13 +270,12 @@ export default function Pol() {
 
   function initSim() {
     simRef.current = {
-      orgs: Array.from({ length: 20 }, () =>
-        new Org(Math.random() * CW, Math.random() * CH, null, 0)
-      ),
-      food: Array.from({ length: 55 }, mkFood),
-      tick: 0,
-      maxGen: 0,
-      extinct: 0,
+      orgs: Array.from({ length: 20 }, () => {
+        const ox = Math.floor(Math.random() * GW);
+        return new Org(ox, terrain[ox] - 2, null, 0);
+      }),
+      food: Array.from({ length: 40 }, mkFood),
+      tick: 0, maxGen: 0, extinct: 0,
     };
   }
 
@@ -107,9 +285,8 @@ export default function Pol() {
     s.tick++;
 
     const fTarget = Math.floor(MAX_FOOD * c.food);
-    if (s.food.length < fTarget) {
-      const n = Math.min(fTarget - s.food.length, 5);
-      for (let i = 0; i < n; i++) s.food.push(mkFood());
+    if (s.food.length < fTarget && s.tick % 3 === 0) {
+      s.food.push(mkFood());
     }
 
     const babies = [];
@@ -117,9 +294,10 @@ export default function Pol() {
       if (!o.alive) continue;
       o.age++;
 
-      const drain = 0.07 * o.dna.eff * c.harsh * (1 + o.dna.spd * 0.09 + o.dna.size * 0.04);
+      const drain = 0.06 * o.dna.eff * c.harsh * (1 + o.dna.spd * 0.08);
       o.energy -= drain;
 
+      // Find nearest food
       let best = null, bd2 = o.dna.sense * o.dna.sense;
       for (const f of s.food) {
         if (!f.alive) continue;
@@ -128,38 +306,29 @@ export default function Pol() {
       }
 
       if (best) {
-        const dx = best.x - o.x, dy = best.y - o.y, d = Math.sqrt(dx*dx + dy*dy) || 1;
-        o.vx = (dx / d) * o.dna.spd;
-        o.vy = (dy / d) * o.dna.spd;
-        if (d < o.dna.size + 5) {
-          o.energy = Math.min(100, o.energy + best.e);
-          best.alive = false;
-        }
+        const dx = best.x - o.x;
+        o.vx = Math.sign(dx) * o.dna.spd;
+        const d = Math.abs(dx);
+        if (d < 3) { o.energy = Math.min(100, o.energy + 18); best.alive = false; }
       } else {
-        o.vx += (Math.random() - 0.5) * 0.35;
-        o.vy += (Math.random() - 0.5) * 0.35;
-        const sp = Math.sqrt(o.vx*o.vx + o.vy*o.vy);
-        if (sp > o.dna.spd) {
-          o.vx = o.vx / sp * o.dna.spd;
-          o.vy = o.vy / sp * o.dna.spd;
-        }
+        if (Math.random() < 0.05) o.vx = (Math.random() - 0.5) * o.dna.spd * 2;
       }
 
-      o.x += o.vx; o.y += o.vy;
+      o.x += o.vx;
       if (o.x < 0) { o.x = 0; o.vx *= -1; }
-      if (o.x > CW) { o.x = CW; o.vx *= -1; }
-      if (o.y < 0) { o.y = 0; o.vy *= -1; }
-      if (o.y > CH) { o.y = CH; o.vy *= -1; }
+      if (o.x >= GW) { o.x = GW - 1; o.vx *= -1; }
 
+      // Snap to terrain (birds fly a bit above)
+      const sprKey = getSpriteKey(o.gen);
+      const flyOffset = sprKey === "bird" ? 6 + Math.sin(o.age * 0.1) * 3 : 1;
+      o.y = terrain[Math.floor(o.x)] - flyOffset;
+
+      // Reproduce
       if (o.energy > o.dna.repro && !o.reproduced && s.orgs.length + babies.length < MAX_POP) {
         o.energy *= 0.52;
         o.reproduced = true;
-        const child = new Org(
-          o.x + (Math.random() - .5) * 10,
-          o.y + (Math.random() - .5) * 10,
-          o.breed(c.mut),
-          o.gen + 1
-        );
+        const cx = Math.max(0, Math.min(GW - 1, Math.floor(o.x + (Math.random() - 0.5) * 8)));
+        const child = new Org(cx, terrain[cx] - 1, o.breed(c.mut), o.gen + 1);
         babies.push(child);
         if (child.gen > s.maxGen) s.maxGen = child.gen;
       }
@@ -172,52 +341,83 @@ export default function Pol() {
 
     if (s.orgs.length === 0) {
       s.extinct++;
-      s.orgs = Array.from({ length: 14 }, () =>
-        new Org(Math.random() * CW, Math.random() * CH, null, Math.max(0, s.maxGen - 8))
-      );
+      s.orgs = Array.from({ length: 14 }, () => {
+        const ox = Math.floor(Math.random() * GW);
+        return new Org(ox, terrain[ox] - 2, null, Math.max(0, s.maxGen - 8));
+      });
     }
   }
 
   function draw(ctx) {
     const s = simRef.current;
 
-    ctx.fillStyle = "rgba(2,2,10,0.18)";
+    // Clear
+    ctx.fillStyle = "#0b0b1a";
     ctx.fillRect(0, 0, CW, CH);
 
-    ctx.fillStyle = "rgba(45,255,80,0.85)";
+    // Sky bands
+    const bands = PAL.sky;
+    const bandH = Math.floor(GROUND_Y / bands.length);
+    for (let i = 0; i < bands.length; i++) {
+      ctx.fillStyle = bands[i];
+      ctx.fillRect(0, i * bandH * PX, CW, bandH * PX);
+    }
+
+    // Stars
+    if (frameRef.current % 60 < 50) {
+      ctx.fillStyle = PAL.star;
+      for (let i = 0; i < 30; i++) {
+        const sx = ((i * 73 + 17) * 37) % GW;
+        const sy = ((i * 41 + 7) * 29) % (GROUND_Y - 10);
+        if (Math.random() > 0.1) px(ctx, sx, sy, PAL.star);
+      }
+    }
+
+    // Ground
+    for (let x = 0; x < GW; x++) {
+      const ty = terrain[x];
+      // Surface
+      px(ctx, x, ty, PAL.ground[0]);
+      // Below surface
+      for (let dy = 1; dy < GH - ty; dy++) {
+        const ci = dy < 3 ? 1 : 2;
+        const col = dy < 6 ? PAL.ground[Math.min(ci, 2)] : PAL.earth[Math.min(dy - 6, 2)];
+        px(ctx, x, ty + dy, col);
+      }
+    }
+
+    // Roads (gen 220+)
+    if (s.maxGen >= 220) {
+      for (let x = 0; x < GW; x++) {
+        px(ctx, x, terrain[x], PAL.road);
+      }
+    }
+
+    // Structures
+    for (const st of STRUCTURES) {
+      if (s.maxGen < st.gen) continue;
+      switch (st.type) {
+        case "tree":     drawTree(ctx, st.x, s.maxGen); break;
+        case "hut":      drawHut(ctx, st.x); break;
+        case "house":    drawHouse(ctx, st.x); break;
+        case "building": drawBuilding(ctx, st.x); break;
+        case "tower":    drawTower(ctx, st.x); break;
+      }
+    }
+
+    // Food (pixel plants)
     for (const f of s.food) {
       if (!f.alive) continue;
-      ctx.beginPath(); ctx.arc(f.x, f.y, 1.5, 0, Math.PI * 2); ctx.fill();
+      px(ctx, f.x, f.y, "#33cc44");
+      if (Math.random() > 0.5) px(ctx, f.x, f.y - 1, "#44dd55");
     }
 
-    if (s.maxGen > 80) {
-      const alpha = Math.min(0.22, (s.maxGen - 80) / 600);
-      const adv = s.orgs.filter(o => o.alive && o.gen > 40);
-      ctx.lineWidth = 0.3;
-      for (let i = 0; i < Math.min(adv.length, 90); i++) {
-        for (let j = i + 1; j < Math.min(adv.length, 90); j++) {
-          const a = adv[i], b = adv[j];
-          if ((a.x - b.x) ** 2 + (a.y - b.y) ** 2 < 70 * 70) {
-            ctx.strokeStyle = `rgba(255,190,55,${alpha})`;
-            ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-          }
-        }
-      }
-    }
-
+    // Creatures
     for (const o of s.orgs) {
       if (!o.alive) continue;
-      const sz = o.dna.size;
-      ctx.beginPath(); ctx.arc(o.x, o.y, sz * 6, 0, Math.PI * 2);
-      ctx.fillStyle = o.rgba(0.05); ctx.fill();
-      ctx.beginPath(); ctx.arc(o.x, o.y, sz * 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = o.rgba(0.18); ctx.fill();
-      ctx.beginPath(); ctx.arc(o.x, o.y, sz, 0, Math.PI * 2);
-      ctx.fillStyle = o.rgba(0.95); ctx.fill();
-      if (o.gen > 200) {
-        ctx.beginPath(); ctx.arc(o.x, o.y, sz * 3, 0, Math.PI * 2);
-        ctx.strokeStyle = o.rgba(0.22); ctx.lineWidth = 0.5; ctx.stroke();
-      }
+      const stage = getStage(o.gen);
+      const sprKey = getSpriteKey(o.gen);
+      drawSprite(ctx, o.x, o.y, sprKey, stage.color);
     }
   }
 
@@ -225,8 +425,7 @@ export default function Pol() {
     initSim();
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#02020a";
-    ctx.fillRect(0, 0, CW, CH);
+    ctx.imageSmoothingEnabled = false;
 
     function loop() {
       const c = ctrlRef.current;
@@ -237,17 +436,8 @@ export default function Pol() {
       if (frameRef.current % 25 === 0) {
         const s = simRef.current;
         const era = getEra(s.maxGen);
-        setDisp({
-          pop: s.orgs.length,
-          maxGen: s.maxGen,
-          year: Math.floor(s.tick / 180),
-          era,
-          extinct: s.extinct,
-        });
-        if (s.maxGen >= 100 && !awakRef.current) {
-          awakRef.current = true;
-          setAwakened(true);
-        }
+        setDisp({ pop: s.orgs.length, maxGen: s.maxGen, year: Math.floor(s.tick / 180), era, extinct: s.extinct });
+        if (s.maxGen >= 220 && !awakRef.current) { awakRef.current = true; setAwakened(true); }
       }
       rafRef.current = requestAnimationFrame(loop);
     }
@@ -256,29 +446,19 @@ export default function Pol() {
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
 
-  const setP = (k, v) => {
-    ctrlRef.current[k] = v;
-    setCtrl(p => ({ ...p, [k]: v }));
-  };
+  const setP = (k, v) => { ctrlRef.current[k] = v; setCtrl(p => ({ ...p, [k]: v })); };
 
   async function pray() {
     if (!msg.trim() || thinking) return;
     setThinking(true);
     setReply("");
-
     const s = simRef.current;
     const [, eraJa] = getEra(s.maxGen);
-
     try {
       const res = await fetch("/api/pray", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: msg,
-          maxGen: s.maxGen,
-          eraJa,
-          pop: s.orgs.length,
-        }),
+        body: JSON.stringify({ message: msg, maxGen: s.maxGen, eraJa, pop: s.orgs.length }),
       });
       const data = await res.json();
       setReply(data.reply || "…（沈黙）");
@@ -289,86 +469,77 @@ export default function Pol() {
   }
 
   const LEVERS = [
-    ["食料豊富さ", "food",  0.2,  3.0, 0.1, "枯渇 ←→ 豊富"],
+    ["食料豊富さ", "food",  0.2, 3.0, 0.1, "枯渇 ←→ 豊富"],
     ["突然変異率", "mut",   0.02, 0.45, 0.01, "安定 ←→ 混沌"],
     ["環境の厳しさ", "harsh", 0.3, 2.5, 0.1, "温和 ←→ 過酷"],
-    ["時間速度",   "spd",   1,    20,   1,   "遅 ←→ 速"],
+    ["時間速度",   "spd",   1, 20, 1, "遅 ←→ 速"],
   ];
 
   const panelStyle = {
-    background: "rgba(255,255,255,0.025)",
-    border: "1px solid rgba(255,255,255,0.065)",
-    borderRadius: 3,
-    padding: "10px 12px",
+    background: "rgba(10,10,30,0.85)",
+    border: "1px solid rgba(80,200,255,0.12)",
+    borderRadius: 2, padding: "8px 10px",
   };
 
   const labelStyle = {
-    fontFamily: "'Share Tech Mono','Courier New',monospace",
-    fontSize: 9,
-    letterSpacing: "0.25em",
-    color: "rgba(80,200,255,0.45)",
-    marginBottom: 8,
-    display: "block",
+    fontFamily: "'Press Start 2P','Share Tech Mono',monospace",
+    fontSize: 7, letterSpacing: "0.15em",
+    color: "rgba(80,200,255,0.5)", marginBottom: 6, display: "block",
   };
 
   return (
     <div style={{
-      background: "#02020a", minHeight: "100vh",
+      background: "#0b0b1a", minHeight: "100vh",
       display: "flex", flexDirection: "column", alignItems: "center",
-      padding: "16px 10px 24px",
-      fontFamily: "'Courier New',monospace", color: "rgba(255,255,255,0.65)",
+      padding: "12px 10px 24px",
+      fontFamily: "'Press Start 2P','Courier New',monospace", color: "rgba(255,255,255,0.65)",
     }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,300&family=Share+Tech+Mono&display=swap');
-        .pol-serif { font-family:'Playfair Display',Georgia,serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap');
+        .pol-title { font-family:'Press Start 2P',monospace; }
         .pol-mono  { font-family:'Share Tech Mono','Courier New',monospace; }
-        input[type=range]{-webkit-appearance:none;width:100%;height:2px;background:rgba(255,255,255,0.1);border-radius:1px;outline:none;cursor:pointer;}
-        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;border-radius:50%;background:rgba(80,200,255,0.9);}
-        .ginput{background:rgba(180,60,255,0.08);border:1px solid rgba(180,60,255,0.35);color:#ddc8ff;outline:none;padding:8px 12px;font-family:'Share Tech Mono',monospace;font-size:12px;flex:1;border-radius:3px;}
-        .gbtn{background:rgba(180,60,255,0.15);border:1px solid rgba(180,60,255,0.5);color:rgba(200,90,255,1);padding:8px 18px;cursor:pointer;font-size:11px;letter-spacing:2px;border-radius:3px;white-space:nowrap;font-family:'Courier New',monospace;}
-        .gbtn:hover:not(:disabled){background:rgba(180,60,255,0.3);}
-        .gbtn:disabled{opacity:0.45;cursor:default;}
+        input[type=range]{-webkit-appearance:none;width:100%;height:2px;background:rgba(255,255,255,0.1);border-radius:0;outline:none;cursor:pointer;}
+        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:8px;height:8px;border-radius:0;background:rgba(80,200,255,0.9);}
+        .ginput{background:rgba(100,50,200,0.1);border:2px solid rgba(100,50,200,0.4);color:#ddc8ff;outline:none;padding:6px 10px;font-family:'Press Start 2P',monospace;font-size:8px;flex:1;border-radius:0;}
+        .gbtn{background:rgba(100,50,200,0.2);border:2px solid rgba(100,50,200,0.6);color:rgba(180,80,255,1);padding:6px 14px;cursor:pointer;font-size:8px;letter-spacing:1px;border-radius:0;white-space:nowrap;font-family:'Press Start 2P',monospace;}
+        .gbtn:hover:not(:disabled){background:rgba(100,50,200,0.4);}
+        .gbtn:disabled{opacity:0.4;cursor:default;}
+        canvas{image-rendering:pixelated;image-rendering:crisp-edges;}
       `}</style>
 
       {/* Header */}
-      <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 16, width: 700 + 12 + 165 }}>
-        <span className="pol-serif" style={{
-          fontSize: 52, fontWeight: 300, fontStyle: "italic",
-          color: "rgba(80,200,255,0.88)", letterSpacing: "0.28em", lineHeight: 1,
+      <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 14, width: CW + 12 + 155 }}>
+        <span className="pol-title" style={{
+          fontSize: 24, color: "rgba(80,200,255,0.9)", letterSpacing: "0.2em", lineHeight: 1,
         }}>pol</span>
         <div>
-          <div className="pol-mono" style={{ fontSize: 13, color: "rgba(255,215,65,0.9)", letterSpacing: "0.1em" }}>
+          <div className="pol-title" style={{ fontSize: 8, color: "rgba(255,215,65,0.9)", letterSpacing: "0.08em" }}>
             {disp.era[1]}
           </div>
-          <div className="pol-mono" style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", letterSpacing: "0.15em" }}>
+          <div className="pol-mono" style={{ fontSize: 8, color: "rgba(255,255,255,0.2)", letterSpacing: "0.1em" }}>
             {disp.era[2]}
           </div>
         </div>
         <div style={{ flex: 1 }} />
-        <div className="pol-mono" style={{ fontSize: 9, color: "rgba(255,255,255,0.22)", textAlign: "right", lineHeight: 1.8 }}>
+        <div className="pol-mono" style={{ fontSize: 8, color: "rgba(255,255,255,0.25)", textAlign: "right", lineHeight: 1.8 }}>
           <div>Gen {disp.maxGen} · Pop {disp.pop}</div>
           <div>Year {disp.year} · Extinct {disp.extinct}×</div>
         </div>
       </div>
 
       {/* Main */}
-      <div style={{ display: "flex", gap: 12 }}>
+      <div style={{ display: "flex", gap: 10 }}>
         <canvas ref={canvasRef} width={CW} height={CH}
-          style={{ border: "1px solid rgba(80,200,255,0.1)", borderRadius: 3, display: "block", flexShrink: 0 }} />
+          style={{ border: "2px solid rgba(80,200,255,0.15)", display: "block", flexShrink: 0, imageRendering: "pixelated" }} />
 
-        <div style={{ width: 165, display: "flex", flexDirection: "column", gap: 9 }}>
+        <div style={{ width: 155, display: "flex", flexDirection: "column", gap: 7 }}>
           {/* Stats */}
           <div style={panelStyle}>
             <span style={labelStyle}>CENSUS</span>
-            {[
-              ["個体数", disp.pop],
-              ["最大世代", `Gen ${disp.maxGen}`],
-              ["経過年", `${disp.year} yr`],
-              ["絶滅", `${disp.extinct}回`],
-            ].map(([k, v]) => (
-              <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)" }}>{k}</span>
-                <span className="pol-mono" style={{ fontSize: 10, color: "rgba(255,255,255,0.82)" }}>{v}</span>
+            {[["個体数", disp.pop], ["最大世代", `Gen ${disp.maxGen}`], ["経過年", `${disp.year} yr`], ["絶滅", `${disp.extinct}回`]].map(([k, v]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ fontSize: 7, color: "rgba(255,255,255,0.3)" }}>{k}</span>
+                <span className="pol-mono" style={{ fontSize: 9, color: "rgba(255,255,255,0.8)" }}>{v}</span>
               </div>
             ))}
           </div>
@@ -377,52 +548,41 @@ export default function Pol() {
           <div style={panelStyle}>
             <span style={labelStyle}>LEVERS</span>
             {LEVERS.map(([label, key, min, max, step, hint]) => (
-              <div key={key} style={{ marginBottom: 11 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                  <span style={{ fontSize: 9, color: "rgba(255,255,255,0.38)" }}>{label}</span>
-                  <span className="pol-mono" style={{ fontSize: 9, color: "rgba(80,200,255,0.9)" }}>{ctrl[key]}</span>
+              <div key={key} style={{ marginBottom: 9 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                  <span style={{ fontSize: 7, color: "rgba(255,255,255,0.35)" }}>{label}</span>
+                  <span className="pol-mono" style={{ fontSize: 8, color: "rgba(80,200,255,0.9)" }}>{ctrl[key]}</span>
                 </div>
                 <input type="range" min={min} max={max} step={step} value={ctrl[key]}
                   onChange={e => setP(key, parseFloat(e.target.value))} />
-                <div style={{ fontSize: 7.5, color: "rgba(255,255,255,0.14)", marginTop: 2 }}>{hint}</div>
+                <div style={{ fontSize: 6, color: "rgba(255,255,255,0.12)", marginTop: 1 }}>{hint}</div>
               </div>
             ))}
           </div>
 
-          {/* Evolution ladder */}
+          {/* Evolution */}
           <div style={panelStyle}>
             <span style={labelStyle}>EVOLUTION</span>
-            <div style={{ fontSize: 8.5, lineHeight: 1.9 }}>
+            <div style={{ fontSize: 7, lineHeight: 2 }}>
               {ERAS.map(([thr, ja]) => {
                 const done = thr <= disp.maxGen;
                 return (
-                  <div key={thr} style={{
-                    color: done ? "rgba(255,215,65,0.78)" : "rgba(255,255,255,0.17)",
-                    display: "flex", gap: 5,
-                  }}>
-                    <span>{done ? "●" : "○"}</span><span>{ja}</span>
+                  <div key={thr} style={{ color: done ? "rgba(255,215,65,0.8)" : "rgba(255,255,255,0.15)", display: "flex", gap: 4 }}>
+                    <span>{done ? "■" : "□"}</span><span>{ja}</span>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* Legend */}
+          {/* Creature Legend */}
           <div style={panelStyle}>
-            <span style={labelStyle}>GENOME COLOR</span>
-            {[
-              ["Gen 0",   "rgba(80,200,255,0.9)"],
-              ["Gen 50",  "rgba(160,255,60,0.9)"],
-              ["Gen 150", "rgba(255,200,40,0.9)"],
-              ["Gen 300", "rgba(255,60,40,0.9)"],
-              ["Gen 500", "rgba(200,60,255,0.9)"],
-            ].map(([g, c]) => (
-              <div key={g} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: "50%",
-                  background: c, boxShadow: `0 0 5px ${c}`, flexShrink: 0,
-                }} />
-                <span style={{ fontSize: 8.5, color: "rgba(255,255,255,0.35)" }}>{g}</span>
+            <span style={labelStyle}>CREATURES</span>
+            {STAGES.map(s => (
+              <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 3 }}>
+                <div style={{ width: 7, height: 7, background: s.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 7, color: "rgba(255,255,255,0.35)" }}>{s.name}</span>
+                <span className="pol-mono" style={{ fontSize: 7, color: "rgba(255,255,255,0.2)", marginLeft: "auto" }}>Gen {s.gen}+</span>
               </div>
             ))}
           </div>
@@ -432,33 +592,29 @@ export default function Pol() {
       {/* God Panel */}
       {awakened && (
         <div style={{
-          marginTop: 13, width: 700 + 12 + 165,
-          background: "rgba(170,50,255,0.05)", border: "1px solid rgba(170,50,255,0.2)",
-          borderRadius: 4, padding: "14px 18px",
+          marginTop: 10, width: CW + 12 + 155,
+          background: "rgba(100,30,200,0.08)", border: "2px solid rgba(100,30,200,0.25)",
+          padding: "10px 14px",
         }}>
-          <div className="pol-mono" style={{
-            fontSize: 10, letterSpacing: "0.3em",
-            color: "rgba(190,70,255,0.75)", marginBottom: 10,
-          }}>
+          <div className="pol-title" style={{ fontSize: 7, letterSpacing: "0.2em", color: "rgba(160,60,255,0.7)", marginBottom: 8 }}>
             ✦ 神への交信 — DIVINE COMMUNICATION
           </div>
           {reply && (
             <div style={{
-              background: "rgba(170,50,255,0.07)", border: "1px solid rgba(170,50,255,0.14)",
-              borderRadius: 3, padding: "12px 16px", marginBottom: 12,
-              fontSize: 14, color: "rgba(230,200,255,0.9)", lineHeight: 2.1,
+              background: "rgba(100,30,200,0.08)", border: "1px solid rgba(100,30,200,0.15)",
+              padding: "10px 12px", marginBottom: 10,
+              fontSize: 12, color: "rgba(220,190,255,0.9)", lineHeight: 2,
               fontFamily: "'Hiragino Mincho ProN','Yu Mincho',Georgia,serif",
             }}>
               {reply}
             </div>
           )}
-          <div style={{ display: "flex", gap: 8 }}>
-            <input className="ginput" type="text"
-              placeholder="あなたの文明へ、言葉を送れ..."
+          <div style={{ display: "flex", gap: 6 }}>
+            <input className="ginput" type="text" placeholder="言葉を送れ..."
               value={msg} onChange={e => setMsg(e.target.value)}
               onKeyDown={e => e.key === "Enter" && pray()} />
             <button className="gbtn" onClick={pray} disabled={thinking}>
-              {thinking ? "交信中…" : "送信"}
+              {thinking ? "交信中" : "送信"}
             </button>
           </div>
         </div>
