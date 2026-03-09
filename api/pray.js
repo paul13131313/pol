@@ -33,6 +33,12 @@ export default async function handler(req, res) {
     });
 
     const data = await response.json();
+
+    if (!response.ok) {
+      console.error("Anthropic API error:", JSON.stringify(data));
+      return res.status(200).json({ reply: "…通信に障害が発生しています。しばらくお待ちください。" });
+    }
+
     const reply = data.content?.find(b => b.type === "text")?.text || "…（沈黙）";
     res.status(200).json({ reply });
   } catch {
