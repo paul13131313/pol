@@ -26,12 +26,91 @@ for (let y = 0; y < GH; y++) {
   }
 }
 
-const TILE_COLORS = {
-  [MAP_GRASS]:  ["#1a4a12","#1c4e14","#1a4612"],
-  [MAP_GRASS2]: ["#163e0e","#184210","#163c0e"],
-  [MAP_WATER]:  ["#0a2a5a","#0c2e60","#0a2856"],
-  [MAP_SHORE]:  ["#1a3a1a","#1c3c1c","#1a381a"],
-  [MAP_SAND]:   ["#2a4a1a","#2c4e1c","#2a4818"],
+// World themes that evolve with civilization
+const WORLD_THEMES = [
+  { gen: 0,   // 原始の大地
+    grass:  ["#1a4a12","#1c4e14","#1a4612"],
+    grass2: ["#163e0e","#184210","#163c0e"],
+    water:  ["#0a2a5a","#0c2e60","#0a2856"],
+    shore:  ["#1a3a1a","#1c3c1c","#1a381a"],
+    sand:   ["#2a4a1a","#2c4e1c","#2a4818"],
+    bg: "#0b0b1a" },
+  { gen: 140, // 開拓の時代
+    grass:  ["#2a5518","#2c581a","#2a5216"],
+    grass2: ["#1e4410","#204812","#1e4210"],
+    water:  ["#0c3068","#0e346e","#0c2e64"],
+    shore:  ["#2a4520","#2c4822","#2a4320"],
+    sand:   ["#3a5520","#3c5822","#3a5320"],
+    bg: "#0a0a18" },
+  { gen: 320, // 文明の大地
+    grass:  ["#2a4a22","#2c4e24","#2a4822"],
+    grass2: ["#223e18","#244220","#223c18"],
+    water:  ["#0a3070","#0c3478","#0a2e6c"],
+    shore:  ["#2a3a2a","#2c3c2c","#2a382a"],
+    sand:   ["#3a4a2a","#3c4e2c","#3a4828"],
+    bg: "#08081a" },
+  { gen: 550, // 産業革命 — 煤けた色調
+    grass:  ["#2a3a22","#2c3e24","#2a3822"],
+    grass2: ["#223018","#24341a","#222e18"],
+    water:  ["#0a2848","#0c2c4e","#0a2644"],
+    shore:  ["#2a3228","#2c342a","#2a3028"],
+    sand:   ["#3a3a28","#3c3e2a","#3a3828"],
+    bg: "#0a0a14" },
+  { gen: 750, // 情報時代 — サイバーな色調
+    grass:  ["#18302a","#1a3430","#18302a"],
+    grass2: ["#142828","#16302c","#142828"],
+    water:  ["#0a2050","#0c2456","#0a1e4c"],
+    shore:  ["#1a2a2a","#1c2e2c","#1a282a"],
+    sand:   ["#2a3030","#2c3434","#2a2e30"],
+    bg: "#060610" },
+  { gen: 1000, // 星間文明 — 宇宙的な輝き
+    grass:  ["#1a2040","#1c2444","#1a1e3e"],
+    grass2: ["#141838","#16203c","#141838"],
+    water:  ["#0a1860","#0c1c68","#0a165c"],
+    shore:  ["#1a1a3a","#1c1e3e","#1a1a38"],
+    sand:   ["#2a2040","#2c2444","#2a1e3e"],
+    bg: "#04040c" },
+];
+
+function getWorldTheme(gen) {
+  let from = WORLD_THEMES[0], to = WORLD_THEMES[0];
+  for (let i = 0; i < WORLD_THEMES.length; i++) {
+    if (gen >= WORLD_THEMES[i].gen) {
+      from = WORLD_THEMES[i];
+      to = WORLD_THEMES[i + 1] || from;
+    }
+  }
+  if (from === to) return from;
+  const t = Math.min(1, (gen - from.gen) / (to.gen - from.gen));
+  // Lerp colors
+  const lerp = (a, b, t) => {
+    const result = [];
+    for (let i = 0; i < a.length; i++) {
+      const ca = parseInt(a[i].slice(1), 16), cb = parseInt(b[i].slice(1), 16);
+      const r = Math.round(((ca >> 16) & 255) * (1-t) + ((cb >> 16) & 255) * t);
+      const g = Math.round(((ca >> 8) & 255) * (1-t) + ((cb >> 8) & 255) * t);
+      const bl = Math.round((ca & 255) * (1-t) + (cb & 255) * t);
+      result.push(`#${((r<<16)|(g<<8)|bl).toString(16).padStart(6,'0')}`);
+    }
+    return result;
+  };
+  return {
+    gen: from.gen,
+    grass: lerp(from.grass, to.grass, t),
+    grass2: lerp(from.grass2, to.grass2, t),
+    water: lerp(from.water, to.water, t),
+    shore: lerp(from.shore, to.shore, t),
+    sand: lerp(from.sand, to.sand, t),
+    bg: lerp([from.bg], [to.bg], t)[0],
+  };
+}
+
+const TILE_KEY_MAP = {
+  [MAP_GRASS]: "grass",
+  [MAP_GRASS2]: "grass2",
+  [MAP_WATER]: "water",
+  [MAP_SHORE]: "shore",
+  [MAP_SAND]: "sand",
 };
 
 function isWater(x, y) {
@@ -80,6 +159,9 @@ const ERAS = [
   [220, "人類の時代",     "Age of Humans"],
   [320, "文明の曙光",     "Dawn of Civilization"],
   [400, "✦ 自我の覚醒",  "The Awakening ✦"],
+  [550, "産業革命",       "Industrial Revolution"],
+  [750, "情報時代",       "Information Age"],
+  [1000,"✦ 星間文明",    "Interstellar Civilization ✦"],
 ];
 
 function getEra(gen) {
@@ -88,27 +170,30 @@ function getEra(gen) {
   return e;
 }
 
-// ── Structures placed on map ──
-const TREES = [
-  {x:15,y:20},{x:45,y:15},{x:80,y:25},{x:120,y:18},{x:155,y:22},{x:190,y:28},{x:225,y:16},
-  {x:30,y:80},{x:70,y:90},{x:110,y:75},{x:150,y:85},{x:200,y:95},{x:55,y:120},{x:130,y:130},
-  {x:20,y:110},{x:95,y:135},{x:175,y:125},{x:210,y:105},{x:60,y:30},{x:170,y:40},
-  {x:35,y:95},{x:100,y:100},{x:140,y:115},{x:215,y:80},{x:10,y:65},{x:230,y:70},
-].filter(t => !isWater(t.x, t.y));
+// ── Seeded random for deterministic structure placement ──
+function seededRand(seed) {
+  let s = seed;
+  return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+}
 
-const EXTRA_TREES = [
-  {x:50,y:70},{x:85,y:110},{x:160,y:70},{x:195,y:50},{x:25,y:45},{x:115,y:40},
-  {x:180,y:135},{x:65,y:140},{x:125,y:95},{x:205,y:115},
-].filter(t => !isWater(t.x, t.y));
+// Generate structures based on civilization level
+function genStructures(maxGen, type, seed, count) {
+  const r = seededRand(seed);
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    const x = Math.floor(r() * (GW - 10) + 5);
+    const y = Math.floor(r() * (GH - 10) + 5);
+    if (!isWater(x, y)) result.push({ x, y });
+  }
+  return result;
+}
 
 // Road path (horizontal, avoiding river)
 const ROAD_Y = Math.floor(GH * 0.72);
+const ROAD2_Y = Math.floor(GH * 0.28);
 
-// Structures
-const HUTS = [{x:60,y:ROAD_Y-4},{x:90,y:ROAD_Y+4},{x:155,y:ROAD_Y-3},{x:185,y:ROAD_Y+5}];
-const HOUSES = [{x:40,y:ROAD_Y-8},{x:110,y:ROAD_Y+6},{x:170,y:ROAD_Y-6},{x:210,y:ROAD_Y+3}];
-const BUILDINGS = [{x:75,y:ROAD_Y-10},{x:130,y:ROAD_Y-5},{x:195,y:ROAD_Y-8}];
-const TOWERS = [{x:100,y:ROAD_Y-12},{x:160,y:ROAD_Y-10}];
+// Base trees (always there from gen 25)
+const BASE_TREES = genStructures(0, "tree", 42, 26);
 
 // ── Organism ──
 class Org {
@@ -120,13 +205,13 @@ class Org {
       spd:   d.spd   ?? 0.15 + Math.random() * 0.25,
       sense: d.sense ?? 12  + Math.random() * 20,
       size:  d.size  ?? 1,
-      repro: d.repro ?? 60  + Math.random() * 30,
-      life:  d.life  ?? 280 + Math.random() * 380,
-      eff:   d.eff   ?? 0.65+ Math.random() * 0.7,
+      repro: d.repro ?? 55  + Math.random() * 25,
+      life:  d.life  ?? 350 + Math.random() * 450,
+      eff:   d.eff   ?? 0.55+ Math.random() * 0.6,
     };
     this.vx = (Math.random() - 0.5) * this.dna.spd;
     this.vy = (Math.random() - 0.5) * this.dna.spd;
-    this.energy = 28 + Math.random() * 22;
+    this.energy = 40 + Math.random() * 30;
     this.age = 0;
     this.reproduced = false;
     this.alive = true;
@@ -163,7 +248,7 @@ function spawnOrg(maxGen) {
     oy = Math.floor(Math.random() * GH);
     if (!isWater(ox, oy)) break;
   }
-  return new Org(ox, oy, null, Math.max(0, maxGen - 8));
+  return new Org(ox, oy, null, Math.max(0, maxGen - 3));
 }
 
 // ── Drawing ──
@@ -181,10 +266,8 @@ function drawSprite(ctx, ox, oy, key, color) {
 }
 
 function drawTreeTopDown(ctx, tx, ty) {
-  // Trunk (center)
   px(ctx, tx, ty, "#4a2a0a");
   px(ctx, tx+1, ty, "#4a2a0a");
-  // Canopy (circle)
   for (let dy = -2; dy <= 1; dy++) {
     for (let dx = -2; dx <= 2; dx++) {
       if (dx*dx + dy*dy <= 5) {
@@ -199,10 +282,8 @@ function drawHutTopDown(ctx, bx, by) {
   for (let dy = 0; dy < 4; dy++)
     for (let dx = 0; dx < 4; dx++)
       px(ctx, bx+dx, by+dy, "#8a6a3a");
-  // Roof pattern
   px(ctx, bx+1, by, "#6a2a1a"); px(ctx, bx+2, by, "#6a2a1a");
   px(ctx, bx, by+1, "#6a2a1a"); px(ctx, bx+3, by+1, "#6a2a1a");
-  // Door
   px(ctx, bx+1, by+3, "#3a1a0a"); px(ctx, bx+2, by+3, "#3a1a0a");
 }
 
@@ -210,13 +291,10 @@ function drawHouseTopDown(ctx, bx, by) {
   for (let dy = 0; dy < 5; dy++)
     for (let dx = 0; dx < 6; dx++)
       px(ctx, bx+dx, by+dy, "#6a6a7a");
-  // Roof highlight
   for (let dx = 0; dx < 6; dx++) px(ctx, bx+dx, by, "#8a4a3a");
   for (let dx = 0; dx < 6; dx++) px(ctx, bx+dx, by+1, "#7a3a2a");
-  // Windows
   px(ctx, bx+1, by+2, "#aaaa33"); px(ctx, bx+4, by+2, "#aaaa33");
   px(ctx, bx+1, by+3, "#aaaa33"); px(ctx, bx+4, by+3, "#aaaa33");
-  // Door
   px(ctx, bx+2, by+4, "#3a2a1a"); px(ctx, bx+3, by+4, "#3a2a1a");
 }
 
@@ -224,30 +302,57 @@ function drawBuildingTopDown(ctx, bx, by) {
   for (let dy = 0; dy < 7; dy++)
     for (let dx = 0; dx < 8; dx++)
       px(ctx, bx+dx, by+dy, "#5a5a6a");
-  // Roof edge
   for (let dx = 0; dx < 8; dx++) { px(ctx, bx+dx, by, "#4a4a5a"); px(ctx, bx+dx, by+6, "#4a4a5a"); }
   for (let dy = 0; dy < 7; dy++) { px(ctx, bx, by+dy, "#4a4a5a"); px(ctx, bx+7, by+dy, "#4a4a5a"); }
-  // Windows
-  for (let wy = 1; wy < 6; wy += 2) {
-    for (let wx = 1; wx < 7; wx += 2) {
+  for (let wy = 1; wy < 6; wy += 2)
+    for (let wx = 1; wx < 7; wx += 2)
       px(ctx, bx+wx, by+wy, "#aaaa33");
-    }
-  }
 }
 
 function drawTowerTopDown(ctx, bx, by) {
   for (let dy = 0; dy < 8; dy++)
     for (let dx = 0; dx < 6; dx++)
       px(ctx, bx+dx, by+dy, "#4a4a5a");
-  // Shadow/depth effect
   for (let dy = 0; dy < 8; dy++) px(ctx, bx+5, by+dy, "#3a3a4a");
   for (let dx = 0; dx < 6; dx++) px(ctx, bx+dx, by+7, "#3a3a4a");
-  // Windows lit
   for (let wy = 1; wy < 7; wy += 2)
     for (let wx = 1; wx < 5; wx += 2)
       px(ctx, bx+wx, by+wy, Math.random() > 0.3 ? "#ffee66" : "#2a2a3a");
-  // Antenna
   px(ctx, bx+3, by-1, "#ff3333");
+}
+
+function drawSkyscraperTopDown(ctx, bx, by) {
+  for (let dy = 0; dy < 10; dy++)
+    for (let dx = 0; dx < 7; dx++)
+      px(ctx, bx+dx, by+dy, "#3a3a4a");
+  for (let dy = 0; dy < 10; dy++) { px(ctx, bx+6, by+dy, "#2a2a3a"); }
+  for (let dx = 0; dx < 7; dx++) { px(ctx, bx+dx, by+9, "#2a2a3a"); }
+  // Glass windows
+  for (let wy = 1; wy < 9; wy++)
+    for (let wx = 1; wx < 6; wx += 2)
+      px(ctx, bx+wx, by+wy, Math.random() > 0.2 ? "#66ccff" : "#1a1a2a");
+  // Roof antenna
+  px(ctx, bx+3, by-1, "#ffffff");
+  px(ctx, bx+3, by-2, "#ff3333");
+}
+
+function drawFarmPatch(ctx, fx, fy) {
+  for (let dy = 0; dy < 4; dy++)
+    for (let dx = 0; dx < 5; dx++) {
+      const c = (dx + dy) % 2 === 0 ? "#3a6a1a" : "#2a5a10";
+      px(ctx, fx+dx, fy+dy, c);
+    }
+  // Rows
+  for (let dx = 0; dx < 5; dx++) px(ctx, fx+dx, fy+1, "#4a3a1a");
+  for (let dx = 0; dx < 5; dx++) px(ctx, fx+dx, fy+3, "#4a3a1a");
+}
+
+function drawSatelliteDish(ctx, sx, sy) {
+  px(ctx, sx, sy, "#aaaaaa");
+  px(ctx, sx+1, sy, "#aaaaaa");
+  px(ctx, sx, sy-1, "#888888");
+  px(ctx, sx+1, sy-1, "#888888");
+  px(ctx, sx+2, sy-2, "#cccccc");
 }
 
 // ── Main Component ──
@@ -259,7 +364,7 @@ export default function Pol() {
   const ctrlRef   = useRef({ food: 1.2, mut: 0.12, harsh: 0.85, spd: 4 });
   const awakRef   = useRef(false);
 
-  const [disp, setDisp]         = useState({ pop: 20, maxGen: 0, year: 0, era: ERAS[0], extinct: 0 });
+  const [disp, setDisp]         = useState({ pop: 6, maxGen: 0, year: 0, era: ERAS[0], extinct: 0, civLv: 0, bg: "#0b0b1a" });
   const [ctrl, setCtrl]         = useState({ food: 1.2, mut: 0.12, harsh: 0.85, spd: 4 });
   const [awakened, setAwakened] = useState(false);
   const [msg, setMsg]           = useState("");
@@ -269,13 +374,18 @@ export default function Pol() {
   function initSim() {
     const orgs = [];
     for (let i = 0; i < 6; i++) orgs.push(spawnOrg(0));
-    simRef.current = { orgs, food: Array.from({ length: 40 }, mkFood), tick: 0, maxGen: 0, extinct: 0 };
+    simRef.current = { orgs, food: Array.from({ length: 40 }, mkFood), tick: 0, maxGen: 0, extinct: 0, civLv: 0 };
   }
 
   function step() {
     const s = simRef.current;
     const c = ctrlRef.current;
     s.tick++;
+
+    // Civilization level accumulates based on population and generation
+    if (s.tick % 60 === 0 && s.orgs.length > 5) {
+      s.civLv += Math.floor(s.orgs.length * 0.1) + Math.floor(s.maxGen * 0.05);
+    }
 
     const fTarget = Math.floor(MAX_FOOD * c.food);
     if (s.food.length < fTarget && s.tick % 3 === 0) s.food.push(mkFood());
@@ -285,7 +395,7 @@ export default function Pol() {
       if (!o.alive) continue;
       o.age++;
 
-      const drain = 0.06 * o.dna.eff * c.harsh * (1 + o.dna.spd * 0.08);
+      const drain = 0.05 * o.dna.eff * c.harsh * (1 + o.dna.spd * 0.06);
       o.energy -= drain;
 
       let best = null, bd2 = o.dna.sense * o.dna.sense;
@@ -300,7 +410,7 @@ export default function Pol() {
         const d = Math.sqrt(dx*dx + dy*dy) || 1;
         o.vx = (dx / d) * o.dna.spd;
         o.vy = (dy / d) * o.dna.spd;
-        if (d < 3) { o.energy = Math.min(100, o.energy + 18); best.alive = false; }
+        if (d < 3) { o.energy = Math.min(100, o.energy + 22); best.alive = false; }
       } else {
         if (Math.random() < 0.02) {
           o.vx = (Math.random() - 0.5) * o.dna.spd;
@@ -309,12 +419,10 @@ export default function Pol() {
       }
 
       let nx = o.x + o.vx, ny = o.y + o.vy;
-      // Bounce off edges
       if (nx < 0) { nx = 0; o.vx *= -1; }
       if (nx >= GW) { nx = GW - 1; o.vx *= -1; }
       if (ny < 0) { ny = 0; o.vy *= -1; }
       if (ny >= GH) { ny = GH - 1; o.vy *= -1; }
-      // Avoid water (except cells/amphibians)
       const sprKey = getSpriteKey(o.gen);
       if (sprKey !== "cell" && sprKey !== "amphibian" && isWater(Math.floor(nx), Math.floor(ny))) {
         o.vx *= -1; o.vy *= -1;
@@ -340,65 +448,133 @@ export default function Pol() {
     s.orgs = [...s.orgs.filter(o => o.alive), ...babies];
     s.food = s.food.filter(f => f.alive);
 
+    // Auto-replenish: when population drops low, spawn reinforcements
+    if (s.orgs.length < 4 && s.tick % 8 === 0) {
+      s.orgs.push(spawnOrg(s.maxGen));
+    }
+    // Full extinction: rapid recovery
     if (s.orgs.length === 0) {
       s.extinct++;
-      s.orgs = Array.from({ length: 14 }, () => spawnOrg(s.maxGen));
+      for (let i = 0; i < 8; i++) s.orgs.push(spawnOrg(s.maxGen));
     }
   }
 
   function draw(ctx) {
     const s = simRef.current;
     const frame = frameRef.current;
+    const mg = s.maxGen;
+    const theme = getWorldTheme(mg);
 
-    // Base map tiles
+    // Base map tiles with evolving theme
     for (let y = 0; y < GH; y++) {
       for (let x = 0; x < GW; x++) {
         const tile = baseMap[y][x];
-        const cols = TILE_COLORS[tile];
+        const cols = theme[TILE_KEY_MAP[tile]];
         const ci = (x * 3 + y * 7 + (tile === MAP_WATER ? Math.floor(frame / 30) : 0)) % cols.length;
         px(ctx, x, y, cols[ci]);
       }
     }
 
-    // Road (gen 70+)
-    if (s.maxGen >= 70) {
-      const roadColor = s.maxGen >= 220 ? "#5a5a5a" : "#5a4a2a";
-      for (let x = 0; x < GW; x++) {
-        if (!isWater(x, ROAD_Y) && !isWater(x, ROAD_Y + 1)) {
-          px(ctx, x, ROAD_Y, roadColor);
-          px(ctx, x, ROAD_Y + 1, roadColor);
-          if (s.maxGen >= 220) px(ctx, x, ROAD_Y + 2, roadColor);
+    // Roads
+    if (mg >= 70) {
+      const roadColor = mg >= 550 ? "#6a6a6a" : mg >= 220 ? "#5a5a5a" : "#5a4a2a";
+      const drawRoad = (ry, width) => {
+        for (let x = 0; x < GW; x++) {
+          let ok = true;
+          for (let w = 0; w < width; w++) { if (isWater(x, ry + w)) { ok = false; break; } }
+          if (ok) for (let w = 0; w < width; w++) px(ctx, x, ry + w, roadColor);
         }
-      }
-      // Road dashes (stone road)
-      if (s.maxGen >= 220) {
+      };
+      drawRoad(ROAD_Y, mg >= 220 ? 3 : 2);
+      if (mg >= 320) drawRoad(ROAD2_Y, 2);
+      // Road dashes
+      if (mg >= 220) {
         for (let x = 0; x < GW; x += 6) {
           px(ctx, x, ROAD_Y + 1, "#7a7a7a");
           px(ctx, x + 1, ROAD_Y + 1, "#7a7a7a");
         }
       }
+      // Vertical connecting roads (gen 550+)
+      if (mg >= 550) {
+        for (const vx of [60, 120, 180]) {
+          for (let y = ROAD2_Y; y <= ROAD_Y; y++) {
+            if (!isWater(vx, y)) px(ctx, vx, y, "#4a4a4a");
+          }
+        }
+      }
+    }
+
+    // Farm patches (gen 140+)
+    if (mg >= 140) {
+      const farmCount = Math.min(12, Math.floor((mg - 140) / 30) + 2);
+      const farms = genStructures(mg, "farm", 777, farmCount);
+      for (const f of farms) drawFarmPatch(ctx, f.x, f.y);
     }
 
     // Trees
-    if (s.maxGen >= 25) {
-      for (const t of TREES) drawTreeTopDown(ctx, t.x, t.y);
+    if (mg >= 25) {
+      for (const t of BASE_TREES) drawTreeTopDown(ctx, t.x, t.y);
     }
-    if (s.maxGen >= 70) {
-      for (const t of EXTRA_TREES) drawTreeTopDown(ctx, t.x, t.y);
+    if (mg >= 70) {
+      const extraTrees = genStructures(mg, "tree2", 123, 10);
+      for (const t of extraTrees) drawTreeTopDown(ctx, t.x, t.y);
     }
 
-    // Structures
-    if (s.maxGen >= 140) {
-      for (const h of HUTS) drawHutTopDown(ctx, h.x, h.y);
+    // Huts (gen 140+, count grows)
+    if (mg >= 140) {
+      const hutCount = Math.min(10, Math.floor((mg - 140) / 20) + 2);
+      const huts = genStructures(mg, "hut", 200, hutCount);
+      for (const h of huts) drawHutTopDown(ctx, h.x, h.y);
     }
-    if (s.maxGen >= 220) {
-      for (const h of HOUSES) drawHouseTopDown(ctx, h.x, h.y);
+
+    // Houses (gen 220+)
+    if (mg >= 220) {
+      const houseCount = Math.min(12, Math.floor((mg - 220) / 25) + 2);
+      const houses = genStructures(mg, "house", 300, houseCount);
+      for (const h of houses) drawHouseTopDown(ctx, h.x, h.y);
     }
-    if (s.maxGen >= 320) {
-      for (const b of BUILDINGS) drawBuildingTopDown(ctx, b.x, b.y);
+
+    // Buildings (gen 320+)
+    if (mg >= 320) {
+      const buildCount = Math.min(8, Math.floor((mg - 320) / 30) + 1);
+      const buildings = genStructures(mg, "bldg", 400, buildCount);
+      for (const b of buildings) drawBuildingTopDown(ctx, b.x, b.y);
     }
-    if (s.maxGen >= 400) {
-      for (const t of TOWERS) drawTowerTopDown(ctx, t.x, t.y);
+
+    // Towers (gen 400+)
+    if (mg >= 400) {
+      const towerCount = Math.min(6, Math.floor((mg - 400) / 40) + 1);
+      const towers = genStructures(mg, "tower", 500, towerCount);
+      for (const t of towers) drawTowerTopDown(ctx, t.x, t.y);
+    }
+
+    // Skyscrapers (gen 550+)
+    if (mg >= 550) {
+      const skyCount = Math.min(8, Math.floor((mg - 550) / 50) + 1);
+      const skyscrapers = genStructures(mg, "sky", 600, skyCount);
+      for (const s of skyscrapers) drawSkyscraperTopDown(ctx, s.x, s.y);
+    }
+
+    // Satellite dishes (gen 750+)
+    if (mg >= 750) {
+      const dishCount = Math.min(5, Math.floor((mg - 750) / 60) + 1);
+      const dishes = genStructures(mg, "dish", 700, dishCount);
+      for (const d of dishes) drawSatelliteDish(ctx, d.x, d.y);
+    }
+
+    // Starport glow (gen 1000+)
+    if (mg >= 1000) {
+      const cx = 120, cy = 75;
+      const pulse = Math.sin(frame * 0.05) * 0.3 + 0.7;
+      for (let dy = -3; dy <= 3; dy++)
+        for (let dx = -3; dx <= 3; dx++)
+          if (dx*dx + dy*dy <= 9)
+            px(ctx, cx+dx, cy+dy, `rgba(100,200,255,${pulse * 0.3})`);
+      px(ctx, cx, cy, `rgba(200,240,255,${pulse})`);
+      px(ctx, cx-1, cy, `rgba(150,220,255,${pulse*0.6})`);
+      px(ctx, cx+1, cy, `rgba(150,220,255,${pulse*0.6})`);
+      px(ctx, cx, cy-1, `rgba(150,220,255,${pulse*0.6})`);
+      px(ctx, cx, cy+1, `rgba(150,220,255,${pulse*0.6})`);
     }
 
     // Creatures (sorted by y for depth)
@@ -406,7 +582,6 @@ export default function Pol() {
     for (const o of sorted) {
       const stage = getStage(o.gen);
       const sprKey = getSpriteKey(o.gen);
-      // Shadow for birds
       if (sprKey === "bird") {
         px(ctx, Math.floor(o.x), Math.floor(o.y) + 3, "rgba(0,0,0,0.2)");
       }
@@ -429,7 +604,8 @@ export default function Pol() {
       if (frameRef.current % 25 === 0) {
         const s = simRef.current;
         const era = getEra(s.maxGen);
-        setDisp({ pop: s.orgs.length, maxGen: s.maxGen, year: Math.floor(s.tick / 180), era, extinct: s.extinct });
+        const themeBg = getWorldTheme(s.maxGen).bg;
+        setDisp({ pop: s.orgs.length, maxGen: s.maxGen, year: Math.floor(s.tick / 180), era, extinct: s.extinct, civLv: s.civLv, bg: themeBg });
         if (s.maxGen >= 220 && !awakRef.current) { awakRef.current = true; setAwakened(true); }
       }
       rafRef.current = requestAnimationFrame(loop);
@@ -479,7 +655,7 @@ export default function Pol() {
 
   return (
     <div style={{
-      background: "#0b0b1a", minHeight: "100vh",
+      background: disp.bg, minHeight: "100vh", transition: "background 3s ease",
       display: "flex", flexDirection: "column", alignItems: "center",
       padding: "12px 10px 24px",
       fontFamily: "'Press Start 2P','Courier New',monospace", color: "rgba(255,255,255,0.65)",
@@ -519,7 +695,7 @@ export default function Pol() {
         <div style={{ width: 155, display: "flex", flexDirection: "column", gap: 7 }}>
           <div style={panelStyle}>
             <span style={labelStyle}>CENSUS</span>
-            {[["個体数",disp.pop],["最大世代",`Gen ${disp.maxGen}`],["経過年",`${disp.year} yr`],["絶滅",`${disp.extinct}回`]].map(([k,v])=>(
+            {[["個体数",disp.pop],["最大世代",`Gen ${disp.maxGen}`],["経過年",`${disp.year} yr`],["文明力",disp.civLv],["絶滅",`${disp.extinct}回`]].map(([k,v])=>(
               <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                 <span style={{fontSize:7,color:"rgba(255,255,255,0.3)"}}>{k}</span>
                 <span className="pol-mono" style={{fontSize:9,color:"rgba(255,255,255,0.8)"}}>{v}</span>
