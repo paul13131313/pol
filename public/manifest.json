@@ -1,0 +1,13 @@
+{
+  "name": "pol — 進化シミュレーション",
+  "short_name": "pol",
+  "description": "生命が進化し、文明を築き、やがて創造主に語りかける。",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#02020a",
+  "theme_color": "#02020a",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
